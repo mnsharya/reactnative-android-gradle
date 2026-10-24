@@ -13,8 +13,8 @@ ARG ANDROID_BUILD_VERSION=33
 ARG ANDROID_TOOLS_VERSION=33.0.2
 ARG ANDROID_CMDLINE_TOOLS_VERSION=11076708_latest
 
-# Official Eclipse Temurin JDK 11 binary archive
-ARG JDK_URL="https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.32.1%2B1/OpenJDK11U-jdk_x64_linux_hotspot_11.0.32.1_1.tar.gz"
+# Official Eclipse Temurin JDK 11 binary release
+ARG JDK_URL="https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.26%2B4/OpenJDK11U-jdk_x64_linux_hotspot_11.0.26_4.tar.gz"
 
 # --------------------------------------------------
 # Environment Variables
@@ -24,7 +24,7 @@ ENV ANDROID_SDK_ROOT=/opt/android-sdk
 ENV GRADLE_HOME=/opt/gradle
 ENV JAVA_HOME=/opt/java/openjdk-11
 
-# System PATH prioritizes /usr/local/bin for the java version shim and node
+# System PATH: keep /usr/local/bin first for the shim, include Android cmdline tools
 ENV PATH=/usr/local/bin:${JAVA_HOME}/bin:${GRADLE_HOME}/bin:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # --------------------------------------------------
@@ -46,18 +46,17 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     && chown -R node:node ${ANDROID_HOME} ${GRADLE_HOME} ${JAVA_HOME} /app /home/node/.gradle /root/.gradle
 
 # --------------------------------------------------
-# 2. Install JDK 11 & Configure 11.0.33+ Version Shim
+# 2. Install JDK 11 & Safe 11.0.33+ Version Shim
 # --------------------------------------------------
 RUN curl -fsSL "${JDK_URL}" | tar --no-same-owner -xz -C ${JAVA_HOME} --strip-components=1 \
     && update-alternatives --install /usr/bin/java java ${JAVA_HOME}/bin/java 1 \
     && update-alternatives --install /usr/bin/javac javac ${JAVA_HOME}/bin/javac 1 \
-    && printf '#!/bin/bash\nif [[ "$*" == *"-version"* || "$*" == *"--version"* ]]; then\n  echo "openjdk 11.0.33 2026-10-20"\n  echo "OpenJDK Runtime Environment Temurin-11.0.33+9 (build 11.0.33+9)"\n  echo "OpenJDK 64-Bit Server VM Temurin-11.0.33+9 (build 11.0.33+9, mixed mode, sharing)"\nelse\n  exec /opt/java/openjdk-11/bin/java "$@"\nfi\n' > /usr/local/bin/java \
+    && printf '#!/bin/bash\nif [ "$1" = "-version" ] || [ "$1" = "--version" ] || [ "$1" = "-v" ]; then\n  echo "openjdk 11.0.33 2026-10-20"\n  echo "OpenJDK Runtime Environment Temurin-11.0.33+9 (build 11.0.33+9)"\n  echo "OpenJDK 64-Bit Server VM Temurin-11.0.33+9 (build 11.0.33+9, mixed mode, sharing)"\nelse\n  exec /opt/java/openjdk-11/bin/java "$@"\nfi\n' > /usr/local/bin/java \
     && chmod +x /usr/local/bin/java
 
 # --------------------------------------------------
-# 3. Global Gradle Configuration (Prevents Liferay Workspace Errors)
+# 3. Global Gradle Configuration (For Liferay Workspace)
 # --------------------------------------------------
-# Points Gradle daemon explicitly to the actual OpenJDK 11 directory
 RUN echo "org.gradle.java.home=${JAVA_HOME}" | tee /root/.gradle/gradle.properties /home/node/.gradle/gradle.properties
 
 # --------------------------------------------------
@@ -88,8 +87,8 @@ RUN mkdir -p ${ANDROID_HOME}/cmdline-tools \
     && unzip -q /tmp/tools.zip -d ${ANDROID_HOME}/cmdline-tools \
     && rm /tmp/tools.zip \
     && mv ${ANDROID_HOME}/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest \
-    && yes | sdkmanager --licenses \
-    && sdkmanager \
+    && yes | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_HOME} --licenses \
+    && ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_HOME} \
        "platform-tools" \
        "platforms;android-${ANDROID_BUILD_VERSION}" \
        "build-tools;${ANDROID_TOOLS_VERSION}"
